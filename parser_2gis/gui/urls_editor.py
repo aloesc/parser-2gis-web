@@ -73,7 +73,7 @@ def gui_urls_editor(urls: list[str]) -> list[str] | None:
     urls_widget.text.focus_set()
 
     # Result urls
-    ret_urls = None
+    ret_urls: list[str] | None = None
 
     # Main loop
     while True:
@@ -83,6 +83,10 @@ def gui_urls_editor(urls: list[str]) -> list[str] | None:
 
         elif event == '-BTN_BUILD-':
             urls = gui_urls_generator()
+            if getattr(urls, 'crawl', False):
+                # "Whole city" mode replaces the URLs list, pass the selection to the main window
+                ret_urls = urls
+                break
             if urls:
                 urls_content = urls_widget.text.get('1.0', 'end')[:-1]
                 join_character = '\n' if urls_content and urls_content[-1:] != '\n' else ''

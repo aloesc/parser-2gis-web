@@ -58,13 +58,14 @@ def create_search_widget(column_element: sg.Element, containing_frame: tk.Frame,
 
 
 @ensure_gui_enabled
-def gui_rubric_selector(is_russian: bool = True) -> dict[str, Any] | None:
+def gui_rubric_selector(is_russian: bool = True, allow_groups: bool = False) -> dict[str, Any] | None:
     """Run rubric selector.
 
     Run form that could help user to specify rubric.
 
     Args:
         is_russian: Whether rubrics for Russia or not.
+        allow_groups: Allow to select a group (non-leaf) node.
 
     Returns:
         Dictionary representing selected rubric
@@ -162,7 +163,7 @@ def gui_rubric_selector(is_russian: bool = True) -> dict[str, Any] | None:
             if tree_values:
                 node = rubrics[tree_values[0]]
                 is_leaf = not bool(node['children'])
-                if is_leaf:
+                if is_leaf or allow_groups:
                     ret_rubric = rubrics[tree_values[0]]
                     window['-STATUS-'].update(ret_rubric['label'])
                 else:

@@ -25,6 +25,19 @@ if GUI_ENABLED:
     import PySimpleGUI as sg
 
 
+def plural(n: int, forms: tuple[str, str, str]) -> str:
+    """Russian plural form: `forms` = (1 item, 2-4 items, 5+ items)."""
+    last_1d = n % 10
+    last_2d = n % 100
+    if 11 <= last_2d <= 19:
+        return forms[2]
+    if last_1d == 1:
+        return forms[0]
+    if 2 <= last_1d <= 4:
+        return forms[1]
+    return forms[2]
+
+
 @ensure_gui_enabled
 def gui_app(urls: list[str], output_path: str, format: str, config: Configuration) -> None:
     """Run GUI.
@@ -53,6 +66,10 @@ def gui_app(urls: list[str], output_path: str, format: str, config: Configuratio
     # If urls wasn't passed then let it be an empty list
     if urls is None:
         urls = []
+
+    # "Whole city" crawl mode state (reset by manual URL input / URLs editor)
+    crawl_cities: list[str] = []
+    crawl_rubric_codes: list[str] = []
 
     # Window layout
     layout = [
@@ -162,6 +179,13 @@ def gui_app(urls: list[str], output_path: str, format: str, config: Configuratio
 
     # Update URL Input element according to `urls` list
     def update_urls_input() -> None:
+        if crawl_cities:
+            window['-IN_URL-'].update(  # noqa: F821
+                f'<обход: {len(crawl_cities)} {plural(len(crawl_cities), ("город", "города", "городов"))}, '
+                f'{len(crawl_rubric_codes)} {plural(len(crawl_rubric_codes), ("рубрика", "рубрики", "рубрик"))}>',
+                disabled=True)
+            return
+
         urls_length = len(urls) if isinstance(urls, list) else 0
         if urls_length == 0:
             window['-IN_URL-'].update('', disabled=False)  # noqa: F821
@@ -218,9 +242,24 @@ def gui_app(urls: list[str], output_path: str, format: str, config: Configuratio
             if not window['-IN_URL-'].Disabled:
                 urls = [values['-IN_URL-']]
 
+            if crawl_cities:
+                # Editor works with URLs only, so leave the crawl mode
+                crawl_cities = []
+                crawl_rubric_codes = []
+                urls = []
+
             ret_urls = gui_urls_editor(urls)
-            if ret_urls is not None:
+            if ret_urls is not None and getattr(ret_urls, 'crawl', False):
+                crawl_cities = list(ret_urls.cities)  # type: ignore
+                crawl_rubric_codes = list(ret_urls.rubric_codes)  # type: ignore
+                urls = []
+                update_urls_input()
+            elif ret_urls is not None:
+                crawl_cities = []
+                crawl_rubric_codes = []
                 urls = ret_urls
+                update_urls_input()
+            else:
                 update_urls_input()
 
         # Select output file format
@@ -272,7 +311,11 @@ def gui_app(urls: list[str], output_path: str, format: str, config: Configuratio
 
             # Run parser
             if not parsing_thread_running():
-                parsing_thread = GUIRunner(urls, values['-OUTPUT_PATH-'], values['-FILE_FORMAT-'], config)
+                if crawl_cities:
+                    parsing_thread = GUIRunner([], values['-OUTPUT_PATH-'], values['-FILE_FORMAT-'], config,
+                                               crawl_cities=crawl_cities, crawl_rubrics=crawl_rubric_codes)
+                else:
+                    parsing_thread = GUIRunner(urls, values['-OUTPUT_PATH-'], values['-FILE_FORMAT-'], config)
                 parsing_thread.start()
 
                 # Activate stop button if it's been disabled

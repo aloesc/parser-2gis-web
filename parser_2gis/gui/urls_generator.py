@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from ..common import GUI_ENABLED, running_linux
+from ..crawler import descendant_leaf_rubrics, leaf_rubrics, load_rubrics
 from ..paths import data_path
 from .error_popup import gui_error_popup
 from .rubric_selector import gui_rubric_selector
@@ -12,14 +14,39 @@ if GUI_ENABLED:
     import PySimpleGUI as sg
 
 
+class GeneratedUrls(list):
+    """List of generated URLs (backward compatible with a plain list).
+
+    In the "whole city" mode the list is empty and `cities` / `rubric_codes` are set.
+    """
+    def __init__(self, urls: list[str] | None = None, cities: list[str] | None = None,
+                 rubric_codes: list[str] | None = None) -> None:
+        super().__init__(urls or [])
+        self.cities: list[str] = list(cities or [])
+        self.rubric_codes: list[str] = list(rubric_codes or [])
+
+    @property
+    def crawl(self) -> bool:
+        return bool(self.cities)
+
+
+def crawl_rubric_codes(rubric: dict[str, Any] | None, rubrics: dict[str, Any] | None = None) -> list[str]:
+    """Leaf rubric codes for the crawl mode: inside the selected node or all of them."""
+    rubrics = rubrics if rubrics is not None else load_rubrics()
+    if rubric:
+        return descendant_leaf_rubrics(rubrics, str(rubric['code']))
+    return leaf_rubrics(rubrics)
+
+
 @ensure_gui_enabled
-def gui_urls_generator() -> list[str]:
+def gui_urls_generator() -> GeneratedUrls:
     """Run URLs generator.
 
     Run form that can build a bunch of URLs out of query and specified cities.
 
     Returns:
-        List of generated URLs.
+        Generated URLs (a list subclass). In the "whole city" mode it's empty,
+        but `cities` and `rubric_codes` are filled.
     """
     # Locate and load cities list
     cities_path = data_path() / 'cities.json'
@@ -31,7 +58,7 @@ def gui_urls_generator() -> list[str]:
             cities = json.load(f)
     except json.JSONDecodeError as e:
         gui_error_popup(f'Файл {cities_path.name} повреждён:\n{e}')
-        return []
+        return GeneratedUrls()
 
     # Countries available
     default_city_code = 'ru'
@@ -70,6 +97,10 @@ def gui_urls_generator() -> list[str]:
                     sg.Input(key='-IN_QUERY-'),
                 ],
             ]),
+        ],
+        [
+            sg.Checkbox('Все компании города (обход по рубрикам)', key='-CHK_CRAWL-', enable_events=True,
+                        checkbox_color=sg.theme_input_background_color()),
         ],
         [
             sg.Column([
@@ -193,7 +224,10 @@ def gui_urls_generator() -> list[str]:
     update_checkbox_layouts(country_code_to_name[default_city_code])
 
     # Result urls
-    ret_urls = []
+    ret_urls = GeneratedUrls()
+
+    def is_group(rubric: dict[str, Any] | None) -> bool:
+        return bool(rubric and rubric.get('children'))
 
     # Main loop
     while True:
@@ -211,8 +245,18 @@ def gui_urls_generator() -> list[str]:
         elif event == '-BTN_DESELECT_ALL-':
             select_checkboxes(values['-COUNTRY-'], False)
 
+        elif event == '-CHK_CRAWL-':
+            window['-IN_QUERY-'].update(disabled=values['-CHK_CRAWL-'])
+            rubric_input = window['-IN_RUBRIC-']
+            if not values['-CHK_CRAWL-'] and is_group(rubric_input.metadata):
+                # Group rubrics are allowed only in the crawl mode
+                rubric_input.metadata = None
+                rubric_input.update(value='Без рубрики')
+
         elif event == '-BTN_RUBRIC-':
-            rubric_dict = gui_rubric_selector(is_russian=values['-COUNTRY-'] == 'Россия')
+            crawl_mode = bool(values['-CHK_CRAWL-'])
+            rubric_dict = gui_rubric_selector(is_russian=values['-COUNTRY-'] == 'Россия',
+                                              allow_groups=crawl_mode)
             if rubric_dict:
                 rubric_input = window['-IN_RUBRIC-']
                 rubric_label = rubric_dict['label']
@@ -221,10 +265,12 @@ def gui_urls_generator() -> list[str]:
                     rubric_input.metadata = None
                 else:
                     rubric_input.metadata = rubric_dict
-                    window['-IN_QUERY-'].update(value=rubric_label)
+                    if not crawl_mode:
+                        window['-IN_QUERY-'].update(value=rubric_label)
 
         elif event == '-BTN_OK-':
-            if not values['-IN_QUERY-'].strip():
+            crawl_mode = bool(values['-CHK_CRAWL-'])
+            if not crawl_mode and not values['-IN_QUERY-'].strip():
                 gui_error_popup('Необходимо ввести запрос!')
                 continue
 
@@ -232,7 +278,15 @@ def gui_urls_generator() -> list[str]:
                 gui_error_popup('Необходимо выбрать хотя бы один город!')
                 continue
 
-            ret_urls = get_selected_urls(values['-IN_QUERY-'])
+            if crawl_mode:
+                codes = crawl_rubric_codes(window['-IN_RUBRIC-'].metadata)
+                if not codes:
+                    gui_error_popup('В выбранной рубрике нет рубрик для обхода!')
+                    continue
+                ret_urls = GeneratedUrls(cities=[x.metadata['code'] for x in get_checkboxes(state=True)],
+                                         rubric_codes=codes)
+            else:
+                ret_urls = GeneratedUrls(get_selected_urls(values['-IN_QUERY-']))
             break
 
     window.close()

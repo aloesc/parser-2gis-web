@@ -9,7 +9,6 @@ from .common import GUI_ENABLED, report_from_validation_error, unwrap_dot_dict
 from .config import Configuration
 from .version import version
 from .cli import cli_app
-from .gui import gui_app
 
 
 class ArgumentHelpFormatter(argparse.HelpFormatter):
@@ -96,9 +95,15 @@ def parse_arguments() -> tuple[argparse.Namespace, Configuration]:
         main_parser_required = True
 
     main_parser = arg_parser.add_argument_group(main_parser_name)
-    main_parser.add_argument('-i', '--url', nargs='+', default=None, required=main_parser_required, help='URL с выдачей')
-    main_parser.add_argument('-o', '--output-path', metavar='PATH', default=None, required=main_parser_required, help='Путь до результирующего файла')
-    main_parser.add_argument('-f', '--format', metavar='{csv,xlsx,json}', choices=['csv', 'xlsx', 'json'], default=None, required=main_parser_required, help='Формат результирующего файла')
+    main_parser.add_argument('-i', '--url', nargs='+', default=None, help='URL с выдачей')
+    main_parser.add_argument('--city', nargs='+', metavar='CODE', default=None, help='Коды городов (из cities.json) для обхода по рубрикам вместо -i')
+    main_parser.add_argument('--rubrics-file', metavar='PATH', default=None, help='Файл с кодами рубрик (по одному в строке) для режима --city. По умолчанию все листовые рубрики')
+    main_parser.add_argument('--no-resume', action='store_true', default=False, help='Режим --city: игнорировать чекпоинт и начать обход заново')
+    main_parser.add_argument('--web', action='store_true', default=False, help='Запустить локальный веб-интерфейс (http://127.0.0.1:8765)')
+    main_parser.add_argument('--port', metavar='PORT', type=int, default=8765, help='Режим --web: порт веб-интерфейса. Если занят, берётся следующий свободный')
+    main_parser.add_argument('--no-browser', action='store_true', default=False, help='Режим --web: не открывать браузер автоматически')
+    main_parser.add_argument('-o', '--output-path', metavar='PATH', default=None, help='Путь до результирующего файла')
+    main_parser.add_argument('-f', '--format', metavar='{csv,xlsx,json}', choices=['csv', 'xlsx', 'json'], default=None, help='Формат результирующего файла')
 
     browser_parser = arg_parser.add_argument_group('Аргументы браузера')
     browser_parser.add_argument('--chrome.binary_path', metavar='PATH', help='Путь до исполняемого файла браузера. Если не указан, то определяется автоматически')
@@ -132,6 +137,16 @@ def parse_arguments() -> tuple[argparse.Namespace, Configuration]:
     rest_parser.add_argument('-h', '--help', action='help', help='Показать эту справку и выйти')
 
     args = arg_parser.parse_args()
+    if args.web:
+        if args.url is not None or args.city is not None:
+            arg_parser.error('аргумент --web несовместим с -i/--url и --city')
+        return args, Configuration()
+    if not GUI_ENABLED and args.url is None and args.city is None:
+        arg_parser.error('следующие аргументы обязательны: -i/--url или --city')
+    if args.url is not None and args.city is not None:
+        arg_parser.error('аргументы -i/--url и --city взаимоисключающие')
+    if main_parser_required and (args.output_path is None or args.format is None):
+        arg_parser.error('следующие аргументы обязательны: -o/--output-path, -f/--format')
     config_args = unwrap_dot_dict(vars(args))
 
     try:
@@ -155,15 +170,26 @@ def main() -> None:
     # Parse command line arguments
     args, command_line_config = parse_arguments()
 
+    if args.web:
+        # Web UI doesn't need PySimpleGUI/tkinter, so the desktop GUI isn't imported
+        from .web import run_web
+        run_web(port=args.port, open_browser=not args.no_browser)
+        return
+
     # Run CLI if we specified all required args, otherwise run GUI.
-    if args.url is None or args.output_path is None or args.format is None:
+    if (args.url is None and args.city is None) or args.output_path is None or args.format is None:
         # Load user config and merge it with one created by command line arguments.
         user_config = Configuration.load_config(auto_create=True)
         user_config.merge_with(command_line_config)
         config = user_config
+        from .gui import gui_app
         app = gui_app
     else:
         config = command_line_config
         app = cli_app
 
-    app(args.url, args.output_path, args.format, config)
+    if app is cli_app:
+        app(args.url, args.output_path, args.format, config,
+            cities=args.city, rubrics_file=args.rubrics_file, resume=not args.no_resume)
+    else:
+        app(args.url, args.output_path, args.format, config)

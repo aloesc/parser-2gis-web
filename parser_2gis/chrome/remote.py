@@ -14,7 +14,7 @@ from websocket import WebSocketException
 from ..common import wait_until_finished
 from .browser import ChromeBrowser
 from .dom import DOMNode
-from .exceptions import ChromeException
+from .exceptions import ChromeCaptchaException, ChromeException
 from .patches import patch_all
 
 if TYPE_CHECKING:
@@ -43,6 +43,7 @@ class ChromeRemote:
         self._response_queues: dict[str, queue.Queue[Response]] = {x: queue.Queue() for x in response_patterns}
         self._requests: dict[str, Request] = {}  # _requests[request_id] = <Request>
         self._requests_lock = threading.Lock()
+        self._captcha_url: str | None = None
 
     @wait_until_finished(timeout=60)
     def _connect_interface(self) -> bool:
@@ -176,6 +177,10 @@ class ChromeRemote:
             if resource_type == 'Preflight':
                 return
 
+            # Remember captcha redirect, see `_raise_if_captcha`
+            if re.match(r'https?://captcha\.2gis\.', request.get('url', '')):
+                self._captcha_url = request['url']
+
             # Add request
             with self._requests_lock:
                 self._requests[request_id] = request
@@ -232,6 +237,11 @@ class ChromeRemote:
 
         self._chrome_tab._send = get_send_with_reraise()
 
+    def _raise_if_captcha(self) -> None:
+        """Raise `ChromeCaptchaException` if browser was sent to captcha.2gis.ru."""
+        if self._captcha_url:
+            raise ChromeCaptchaException()
+
     def navigate(self, url: str, referer: str = '', timeout: int = 60) -> None:
         """Navigate to URL.
 
@@ -242,6 +252,7 @@ class ChromeRemote:
         Returns:
             None on success, error message on failure.
         """
+        self._captcha_url = None
         ret = self._chrome_tab.Page.navigate(url=url, _timeout=timeout, referrer=referer)
         error_message = ret.get('errorText', None)
         if error_message:
@@ -257,6 +268,7 @@ class ChromeRemote:
         Returns:
             Response or None in case of timeout.
         """
+        self._raise_if_captcha()
         try:
             if self._chrome_tab._stopped.is_set():
                 raise pychrome.RuntimeException('Tab has been stopped')
@@ -293,6 +305,7 @@ class ChromeRemote:
     @wait_until_finished(timeout=None, throw_exception=False)
     def get_responses(self) -> list[Response]:
         """Get gathered responses."""
+        self._raise_if_captcha()
         with self._requests_lock:
             return [x['response'] for x in self._requests.values() if 'response' in x]
 
@@ -346,6 +359,7 @@ class ChromeRemote:
         Returns:
             Result value.
         """
+        self._raise_if_captcha()
         eval_result = self._chrome_tab.Runtime.evaluate(expression=expression,
                                                         returnByValue=True)
         return eval_result['result'].get('value', None)

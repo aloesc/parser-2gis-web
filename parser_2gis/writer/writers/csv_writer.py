@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from ...common import report_from_validation_error
 from ...logger import logger
 from ..models import CatalogItem
+from ..stats import CRAWL_RUBRIC_COLUMN, RUBRIC_CODES_COLUMN, SITE_COLUMN, TOP_RUBRIC_COLUMN, YES, NO, has_site, top_rubrics
 from .file_writer import FileWriter
 
 
@@ -53,6 +54,14 @@ class CSVWriter(FileWriter):
 
         if not self._options.csv.add_rubrics:
             data_mapping.pop('rubrics', None)
+
+        if self._options.csv.add_site_flag:
+            data_mapping['has_site'] = SITE_COLUMN
+        if self._options.csv.add_top_rubric:
+            data_mapping['top_rubric'] = TOP_RUBRIC_COLUMN
+        if self._options.csv.add_rubric_codes:
+            data_mapping['rubric_codes'] = RUBRIC_CODES_COLUMN
+            data_mapping['crawl_rubric'] = CRAWL_RUBRIC_COLUMN
 
         return {
             **data_mapping,
@@ -299,5 +308,16 @@ class CSVWriter(FileWriter):
         # Rubrics
         if self._options.csv.add_rubrics:
             data['rubrics'] = self._options.csv.join_char.join(x.name for x in catalog_item.rubrics)
+
+        # Site flag / top-level rubric
+        if self._options.csv.add_site_flag:
+            data['has_site'] = YES if has_site(c for g in catalog_item.contact_groups for c in g.contacts) else NO
+        if self._options.csv.add_top_rubric:
+            data['top_rubric'] = self._options.csv.join_char.join(top_rubrics(x.id for x in catalog_item.rubrics))
+
+        if self._options.csv.add_rubric_codes:
+            data['rubric_codes'] = self._options.csv.join_char.join(x.id for x in catalog_item.rubrics)
+            # `crawl_rubric` is set by the crawler before parsing every rubric
+            data['crawl_rubric'] = getattr(self, 'crawl_rubric', None) or ''
 
         return data

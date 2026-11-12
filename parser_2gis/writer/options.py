@@ -16,6 +16,9 @@ class CSVOptions(BaseModel):
         remove_empty_columns: Remove empty columns after parsing process finished.
         remove_duplicates: Remove duplicates after parsing process finished.
         join_char: Char for joining complex values.
+        add_site_flag: Add "Есть сайт" column (да/нет, only `website` contacts count).
+        add_rubric_codes: Add "Коды рубрик" (API rubric ids) and "Рубрика обхода" (crawl mode rubric) columns.
+        add_top_rubric: Add "Рубрика верхнего уровня" column (from `data/rubrics.json`).
     """
     add_rubrics: bool = True
     add_comments: bool = True
@@ -23,6 +26,9 @@ class CSVOptions(BaseModel):
     remove_empty_columns: bool = True
     remove_duplicates: bool = True
     join_char: str = '; '
+    add_site_flag: bool = False
+    add_rubric_codes: bool = False
+    add_top_rubric: bool = False
 
 
 class WriterOptions(BaseModel):
