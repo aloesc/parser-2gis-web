@@ -63,6 +63,7 @@ class BuildStandaloneCommand(distutils.cmd.Command):
             # Add data
             build_cmd += [
                 '--add-data', f'parser_2gis/data{os.pathsep}parser_2gis/data',
+                '--add-data', f'parser_2gis/web/static{os.pathsep}parser_2gis/web/static',
                 'parser-2gis.py',
             ]
 

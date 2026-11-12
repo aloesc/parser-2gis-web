@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="token" content="{{TOKEN}}">
+  <meta name="color-scheme" content="light dark">
+  <title>Parser2GIS</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <img class="brand-icon" src="/static/icon.svg" alt="" width="28" height="28">
+        <span class="brand-name">Parser2GIS</span>
+        <span class="brand-version" id="version" aria-label="Версия"></span>
+      </div>
+      <div class="status-pill" id="statusPill" data-state="idle" role="status" aria-live="polite">
+        <span class="dot" aria-hidden="true"></span>
+        <span id="statusText">Ожидание</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="banner banner-captcha" id="captchaBanner" role="alert" hidden>
+      <div class="banner-icon" aria-hidden="true">!</div>
+      <div>
+        <h2>2GIS показал капчу</h2>
+        <p>Парсер не умеет решать капчу, поэтому обход остановлен. Что делать:</p>
+        <ol>
+          <li>Откройте 2gis.ru в обычном браузере и пройдите проверку.</li>
+          <li>Подождите несколько минут или смените сеть/IP.</li>
+          <li>Включите «Продолжить с места остановки» и запустите задачу снова. Уже собранные записи сохранятся.</li>
+        </ol>
+      </div>
+    </section>
+    <section class="banner banner-error" id="errorBanner" role="alert" hidden>
+      <div class="banner-icon" aria-hidden="true">×</div>
+      <div><h2>Задача завершилась с ошибкой</h2><p id="errorText"></p></div>
+    </section>
+
+    <div class="layout">
+      <div class="col">
+        <section class="card" aria-labelledby="h-mode">
+          <h2 class="card-title" id="h-mode">Задача</h2>
+          <div class="segmented" id="modeSeg" role="radiogroup" aria-label="Режим работы">
+            <button type="button" role="radio" data-value="urls" aria-checked="true">По запросу</button>
+            <button type="button" role="radio" data-value="crawl" aria-checked="false">Все компании города</button>
+          </div>
+          <p class="hint" id="modeHint"></p>
+          <div class="field" id="queryField">
+            <label for="query">Запрос</label>
+            <input type="text" id="query" class="input" placeholder="Например, аптека" autocomplete="off">
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="h-cities">
+          <div class="card-head">
+            <h2 class="card-title" id="h-cities">Города</h2>
+            <span class="counter" id="cityCount" aria-live="polite">Выбрано: 0</span>
+          </div>
+          <div class="row">
+            <select id="country" class="input select" aria-label="Страна"></select>
+            <input type="search" id="citySearch" class="input" placeholder="Поиск города" aria-label="Поиск города" autocomplete="off">
+          </div>
+          <div class="row row-actions">
+            <button type="button" class="btn btn-text" id="cityAll">Выбрать все</button>
+            <button type="button" class="btn btn-text" id="cityNone">Снять</button>
+          </div>
+          <div class="scroll-list" id="cityList" role="group" aria-label="Список городов"></div>
+        </section>
+
+        <section class="card" aria-labelledby="h-rub">
+          <div class="card-head">
+            <h2 class="card-title" id="h-rub">Рубрика</h2>
+            <button type="button" class="btn btn-text" id="rubReset" disabled>Без рубрики</button>
+          </div>
+          <p class="hint" id="rubHint"></p>
+          <div class="chip-line" id="rubCurrent"></div>
+          <input type="search" id="rubSearch" class="input" placeholder="Поиск рубрики" aria-label="Поиск рубрики" autocomplete="off">
+          <div class="scroll-list tall" id="rubTree" aria-label="Дерево рубрик"></div>
+        </section>
+      </div>
+
+      <div class="col">
+        <section class="card" aria-labelledby="h-out">
+          <h2 class="card-title" id="h-out">Результат</h2>
+          <div class="field">
+            <label for="outPath">Файл</label>
+            <input type="text" id="outPath" class="input mono" autocomplete="off" spellcheck="false">
+          </div>
+          <div class="field">
+            <span class="label" id="fmtLabel">Формат</span>
+            <div class="segmented" id="fmtSeg" role="radiogroup" aria-labelledby="fmtLabel">
+              <button type="button" role="radio" data-value="csv" aria-checked="true">CSV</button>
+              <button type="button" role="radio" data-value="xlsx" aria-checked="false">XLSX</button>
+              <button type="button" role="radio" data-value="json" aria-checked="false">JSON</button>
+            </div>
+          </div>
+          <label class="toggle-row">
+            <span>Продолжить с места остановки</span>
+            <span class="switch"><input type="checkbox" id="resume" role="switch" checked><span class="slider" aria-hidden="true"></span></span>
+          </label>
+        </section>
+
+        <section class="card run-card" aria-labelledby="h-run">
+          <h2 class="card-title" id="h-run">Запуск</h2>
+          <button type="button" class="btn btn-primary btn-big" id="runBtn">Запустить</button>
+          <div class="progress-wrap" id="progressWrap" hidden>
+            <div class="progress" id="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Прогресс">
+              <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <div class="progress-meta">
+              <span id="progressText">0 / 0</span>
+              <span id="recordsText">Записей: 0</span>
+            </div>
+          </div>
+          <p class="hint" id="runMessage"></p>
+        </section>
+
+        <section class="card" aria-labelledby="h-set">
+          <button type="button" class="collapse-head" id="settingsToggle" aria-expanded="false" aria-controls="settingsBody">
+            <h2 class="card-title" id="h-set">Настройки</h2>
+            <span class="chevron" aria-hidden="true"></span>
+          </button>
+          <div id="settingsBody" hidden>
+            <div id="settingsFields"></div>
+            <div class="row row-end">
+              <button type="button" class="btn btn-secondary" id="saveSettings">Сохранить настройки</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <section class="card" id="statsCard" aria-labelledby="h-stats" hidden>
+      <div class="card-head">
+        <h2 class="card-title" id="h-stats">Статистика по нишам</h2>
+        <input type="search" id="statsSearch" class="input input-sm" placeholder="Поиск" aria-label="Поиск по статистике" autocomplete="off">
+      </div>
+      <p class="hint" id="statsPath"></p>
+      <div class="table-wrap">
+        <table class="stats" id="statsTable">
+          <thead>
+            <tr>
+              <th scope="col" aria-sort="none"><button type="button" data-key="rubric">Рубрика</button></th>
+              <th scope="col" aria-sort="none"><button type="button" data-key="group">Группа</button></th>
+              <th scope="col" class="num" aria-sort="none"><button type="button" data-key="total">Всего</button></th>
+              <th scope="col" class="num" aria-sort="none"><button type="button" data-key="without_site">Без сайта</button></th>
+              <th scope="col" aria-sort="descending"><button type="button" data-key="share">Доля без сайта</button></th>
+            </tr>
+          </thead>
+          <tbody id="statsBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="statsEmpty" hidden>Ничего не найдено</div>
+    </section>
+
+    <section class="card" aria-labelledby="h-log">
+      <div class="card-head">
+        <h2 class="card-title" id="h-log">Журнал</h2>
+        <div class="row-inline">
+          <span class="conn" id="conn" data-ok="0">нет связи</span>
+          <button type="button" class="btn btn-text" id="logClear">Очистить</button>
+        </div>
+      </div>
+      <div class="log-wrap">
+        <div class="log" id="log" tabindex="0" role="log" aria-label="Журнал выполнения"></div>
+        <div class="empty log-empty" id="logEmpty">Здесь появятся сообщения о ходе работы</div>
+        <button type="button" class="btn btn-secondary jump" id="logJump" hidden>К последним ↓</button>
+      </div>
+    </section>
+  </main>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+</body>
+</html>
