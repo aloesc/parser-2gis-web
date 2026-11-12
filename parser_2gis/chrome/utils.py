@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 import functools
+import glob
 import os
+import re
+import shutil
 import socket
 
 from ..common import running_mac, running_windows
+
+
+def _playwright_build(path: str) -> int:
+    """Build number from `.../chromium-<build>/...` (0 if unknown)."""
+    match = re.search(r'chromium-(\d+)', path)
+    return int(match.group(1)) if match else 0
 
 
 @functools.lru_cache()
@@ -63,31 +72,40 @@ def locate_chrome_path() -> str | None:
     elif running_mac():
         for binary_path in \
                 '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', \
-                os.path.expanduser('~/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'):
+                os.path.expanduser('~/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'), \
+                '/Applications/Chromium.app/Contents/MacOS/Chromium', \
+                os.path.expanduser('~/Applications/Chromium.app/Contents/MacOS/Chromium'):
             if os.path.isfile(binary_path):
                 return binary_path
 
     else:
-        app_dirs = ['/usr/bin', '/usr/sbin', '/usr/local/bin', '/usr/local/sbin', '/sbin', '/opt/google/chrome']
-        browser_executables = ['google-chrome', 'chrome', 'chrome-browser', 'google-chrome-stable']
-        for d in app_dirs:
-            for f in browser_executables:
-                binary_path = os.path.join(d, f)
+        # Google Chrome has priority over Chromium
+        chrome_executables = ['google-chrome', 'chrome', 'chrome-browser', 'google-chrome-stable']
+        chromium_executables = ['chromium', 'chromium-browser']
+        app_dirs = ['/usr/bin', '/usr/sbin', '/usr/local/bin', '/usr/local/sbin', '/sbin', '/snap/bin',
+                    '/opt/google/chrome', '/usr/lib/chromium', '/usr/lib64/chromium-browser',
+                    '/usr/lib/chromium-browser']
+
+        for executables in (chrome_executables, chromium_executables):
+            for d in app_dirs:
+                for f in executables:
+                    binary_path = os.path.join(d, f)
+                    if os.path.isfile(binary_path):
+                        return binary_path
+
+            # We also could look the executable up in PATH
+            for f in executables:
+                binary_path = shutil.which(f) or ''
                 if os.path.isfile(binary_path):
                     return binary_path
 
-        # We also could use 'which' to locate Chrome executable
-        import subprocess
-
-        for f in browser_executables:
-            try:
-                ret_output = subprocess.check_output(['which', f])
-                binary_path = ret_output.decode('utf-8').strip()
-                if os.path.isfile(binary_path):
-                    return binary_path
-
-            except subprocess.CalledProcessError:
-                pass
+        # Last resort: Chromium downloaded by Playwright (the newest build)
+        pw_root = os.environ.get('PLAYWRIGHT_BROWSERS_PATH') or os.path.expanduser('~/.cache/ms-playwright')
+        builds = glob.glob(os.path.join(pw_root, 'chromium-*', 'chrome-linux*', 'chrome'))
+        builds.sort(key=_playwright_build, reverse=True)
+        for binary_path in builds:
+            if os.path.isfile(binary_path):
+                return binary_path
 
     return None
 

@@ -42,7 +42,9 @@
 - 📊 Сводка «где чаще всего нет сайта»: по узким нишам («Частные стоматологии», «Организация похорон»), а не по «Медицине» целиком
 
 ## 🚀 Установка
-> Для работы парсера необходим браузер [Google Chrome](https://google.com/chrome) (или другой Chromium, путь к нему задаётся `--chrome.binary_path`).
+> Для работы парсера необходим браузер [Google Chrome](https://google.com/chrome) или Chromium. Парсер ищет их сам: сначала Chrome, затем Chromium (`chromium`, `chromium-browser`, в том числе `/snap/bin`), на Linux в крайнем случае Chromium, скачанный Playwright (`~/.cache/ms-playwright`). Если браузер лежит в другом месте, укажите его: `--chrome.binary_path /путь/к/браузеру` (в веб-интерфейсе — «Путь к Chrome» в настройках).
+>
+> Arch Linux: `sudo pacman -S chromium` (Chrome есть только в AUR).
 
 Форк не публикуется в PyPI и не имеет готовых сборок: ставьте из исходников (Python 3.8+).
 
